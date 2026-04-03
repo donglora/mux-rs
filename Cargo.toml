@@ -1,0 +1,25 @@
+[package]
+name = "donglora-mux"
+version = "0.1.0"
+edition = "2024"
+authors = ["Stephen Waits <steve@waits.net>"]
+license = "MIT"
+description = "DongLoRa USB Multiplexer — share one dongle with multiple applications"
+repository = "https://github.com/swaits/donglora"
+keywords = ["lora", "radio", "usb", "multiplexer"]
+categories = ["hardware-support"]
+
+[dependencies]
+donglora-client = { path = "../../clients/rust" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tokio-serial = "5"
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
