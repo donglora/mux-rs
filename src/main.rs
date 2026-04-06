@@ -50,16 +50,14 @@ async fn main() -> anyhow::Result<()> {
     // Resolve serial port
     let port = match args.port {
         Some(p) => p,
-        None => {
-            tokio::task::spawn_blocking(|| {
-                donglora_client::find_port().unwrap_or_else(|| {
-                    info!("waiting for DongLoRa device...");
-                    donglora_client::wait_for_device()
-                })
+        None => tokio::task::spawn_blocking(|| {
+            donglora_client::find_port().unwrap_or_else(|| {
+                info!("waiting for DongLoRa device...");
+                donglora_client::wait_for_device()
             })
-            .await
-            .map_err(|e| anyhow::anyhow!("device discovery task failed: {e}"))?
-        }
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("device discovery task failed: {e}"))?,
     };
 
     // Resolve socket path
@@ -102,12 +100,10 @@ fn parse_tcp_addr(tcp: &str) -> Option<(String, u16)> {
 }
 
 async fn signal_handler(shutdown: CancellationToken) -> anyhow::Result<()> {
-    let mut sigint =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-            .map_err(|e| anyhow::anyhow!("failed to register SIGINT handler: {e}"))?;
-    let mut sigterm =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .map_err(|e| anyhow::anyhow!("failed to register SIGTERM handler: {e}"))?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+        .map_err(|e| anyhow::anyhow!("failed to register SIGINT handler: {e}"))?;
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .map_err(|e| anyhow::anyhow!("failed to register SIGTERM handler: {e}"))?;
 
     tokio::select! {
         _ = sigint.recv() => info!("received SIGINT"),
