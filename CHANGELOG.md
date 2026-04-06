@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 — 2026-04-06
+
+### Fixed
+
+- Prevent multiple mux instances from running simultaneously via file-based
+  exclusive lock (`fd-lock`); stale sockets from crashed instances are cleaned
+  up automatically
+- Clearer error message when TCP port is already in use
+
 ## 0.1.0 — 2026-04-06
 
 Initial release.

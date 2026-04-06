@@ -91,7 +91,24 @@ impl MuxDaemon {
         if let Some(parent) = sock_path.parent() {
             tokio::fs::create_dir_all(parent).await.ok();
         }
+        // Acquire an exclusive lock to prevent multiple mux instances.
+        // The lock is held for the process lifetime and auto-released on exit (even SIGKILL).
+        let lock_path = format!("{}.lock", self.socket_path);
+        let lock_file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|e| anyhow::anyhow!("failed to open lock file {lock_path}: {e}"))?;
+        let mut lock = fd_lock::RwLock::new(lock_file);
+        let _lock_guard = match lock.try_write() {
+            Ok(guard) => guard,
+            Err(_) => anyhow::bail!("another donglora-mux is already running (lock held on {lock_path})"),
+        };
+
         if sock_path.exists() {
+            // Lock acquired but socket file exists — stale from a crashed instance.
+            info!("removing stale socket {}", self.socket_path);
             tokio::fs::remove_file(sock_path).await.ok();
         }
 
@@ -103,9 +120,13 @@ impl MuxDaemon {
         // Start TCP server (optional)
         let tcp_listener = if let Some((ref host, port)) = self.tcp_addr {
             let addr = format!("{host}:{port}");
-            let listener = TcpListener::bind(&addr)
-                .await
-                .map_err(|e| anyhow::anyhow!("failed to bind TCP {addr}: {e}"))?;
+            let listener = TcpListener::bind(&addr).await.map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AddrInUse {
+                    anyhow::anyhow!("another donglora-mux is already listening on TCP {addr}")
+                } else {
+                    anyhow::anyhow!("failed to bind TCP {addr}: {e}")
+                }
+            })?;
             info!("TCP listening on {addr}");
             Some(listener)
         } else {

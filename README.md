@@ -11,6 +11,7 @@ dongle simultaneously.
 - RxPacket frames broadcast to all connected clients
 - StartRx/StopRx reference-counted across clients
 - SetConfig locked once set (single client can change freely)
+- Single-instance enforcement via file lock (stale sockets auto-cleaned)
 - Automatic dongle reconnect on hot-plug
 - No panics — enforced by clippy deny lints
 
