@@ -495,6 +495,8 @@ async fn accept_tcp_clients(
         match accept_result {
             Ok((stream, addr)) => {
                 debug!("TCP connection from {addr}");
+                // Low-latency: disable Nagle (COBS frames are small)
+                let _ = stream.set_nodelay(true);
                 let (read_half, write_half) = stream.into_split();
                 spawn_client(read_half, write_half, state.clone(), cmd_tx.clone(), shutdown.clone());
             }

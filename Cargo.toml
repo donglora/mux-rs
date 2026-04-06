@@ -10,7 +10,7 @@ keywords = ["lora", "radio", "usb", "multiplexer"]
 categories = ["hardware-support"]
 
 [dependencies]
-donglora-client = { path = "../../clients/rust" }
+donglora-client = { version = "0.1.0", path = "../../clients/rust" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
