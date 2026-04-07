@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 — 2026-04-07
+
+### Fixed
+
+- **Exclusive serial port lock.** The mux now acquires an `flock`-based
+  exclusive lock on the serial port before opening it. This prevents other
+  processes (bridges, other mux instances) from directly opening the same
+  device while the mux owns it. The lock is held for the duration of the
+  dongle session and auto-released on disconnect or crash.
+
 ## 0.2.0 — 2026-04-07
 
 ### Changed

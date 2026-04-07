@@ -156,12 +156,12 @@ impl MuxDaemon {
             }
 
             info!("opening dongle on {}", self.serial_port);
-            let serial = loop {
+            let (serial, _serial_lock_guard) = loop {
                 if self.shutdown.is_cancelled() {
                     return;
                 }
                 match open_and_ping(&self.serial_port).await {
-                    Ok(s) => break s,
+                    Ok(pair) => break pair,
                     Err(e) => {
                         debug!("could not open dongle: {e}");
                         tokio::select! {
@@ -224,7 +224,39 @@ impl MuxDaemon {
 
 // ── Dongle I/O ─────────────────────────────────────────────────────
 
-async fn open_and_ping(port: &str) -> anyhow::Result<tokio_serial::SerialStream> {
+/// Lock file path for exclusive serial port access.
+fn serial_lock_path(port: &str) -> String {
+    format!("/tmp/donglora-serial-{}.lock", port.replace('/', "_"))
+}
+
+/// Open the serial port with an exclusive lock and verify the dongle responds to ping.
+///
+/// Returns the serial stream and the lock. The caller must keep `_serial_lock` alive
+/// for the duration of the dongle session. Dropping it releases the exclusive flock,
+/// allowing other processes to claim the port.
+async fn open_and_ping(
+    port: &str,
+) -> anyhow::Result<(tokio_serial::SerialStream, fd_lock::RwLock<std::fs::File>)> {
+    // Acquire exclusive flock before opening the serial port. This prevents bridges
+    // or other processes from directly opening the same device while the mux owns it.
+    let lock_path = serial_lock_path(port);
+    let lock_file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| anyhow::anyhow!("failed to open serial lock file {lock_path}: {e}"))?;
+    let mut lock = fd_lock::RwLock::new(lock_file);
+    // Acquire exclusive flock (non-blocking). Fails if another process holds it.
+    let guard = lock
+        .try_write()
+        .map_err(|_| anyhow::anyhow!("serial port {port} is locked by another process"))?;
+    // Forget the guard so its Drop doesn't call flock(UNLOCK). The underlying flock
+    // stays held as long as the file descriptor (owned by `lock`) remains open.
+    // When `lock` is dropped at the end of the dongle session, the fd closes and
+    // the OS releases the flock automatically.
+    std::mem::forget(guard);
+
     let builder = tokio_serial::new(port, 115_200).timeout(Duration::from_secs(2));
     let mut serial =
         tokio_serial::SerialStream::open(&builder).map_err(|e| anyhow::anyhow!("failed to open {port}: {e}"))?;
@@ -260,7 +292,7 @@ async fn open_and_ping(port: &str) -> anyhow::Result<tokio_serial::SerialStream>
         for frame in reader.feed(&buf[..n]) {
             if frame.first() == Some(&0) {
                 info!("dongle responded to Ping");
-                return Ok(serial);
+                return Ok((serial, lock));
             }
         }
     }
