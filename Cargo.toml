@@ -1,16 +1,19 @@
 [package]
 name = "donglora-mux"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
+rust-version = "1.85"
 authors = ["Stephen Waits <steve@waits.net>"]
 license = "MIT"
 description = "DongLoRa USB Multiplexer — share one dongle with multiple applications"
-repository = "https://github.com/swaits/donglora"
+repository = "https://github.com/donglora/mux-rs"
+homepage = "https://github.com/donglora/mux-rs"
 keywords = ["lora", "radio", "usb", "multiplexer"]
 categories = ["hardware-support"]
+exclude = [".jj/", "deny.toml", "justfile", "mise.toml", "rustfmt.toml"]
 
 [dependencies]
-donglora-client = { version = "0.1.0", path = "../../clients/rust" }
+donglora-client = "0.2"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }

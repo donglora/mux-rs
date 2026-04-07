@@ -3,6 +3,12 @@
 USB multiplexer daemon — lets multiple applications share one DongLoRa
 dongle simultaneously.
 
+## Install
+
+```sh
+cargo install donglora-mux
+```
+
 ## What It Does
 
 - Owns the USB serial connection exclusively
@@ -18,12 +24,12 @@ dongle simultaneously.
 ## Running
 
 ```sh
-just run                                    # start the mux daemon
-just verbose                                # start with verbose logging
-just run -- --tcp 5741 --port /dev/ttyACM0  # with options
+donglora-mux                                    # start the mux daemon
+donglora-mux --verbose                          # start with verbose logging
+donglora-mux --tcp 5741 --port /dev/ttyACM0     # with options
 ```
 
 ## Depends On
 
-- [clients/rust](../../clients/rust/) — the `donglora-client` library
-  (protocol types, COBS framing, device discovery)
+- [`donglora-client`](https://crates.io/crates/donglora-client) — protocol
+  types, COBS framing, device discovery

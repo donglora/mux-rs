@@ -61,9 +61,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Resolve socket path
-    let socket_path = args
-        .socket
-        .unwrap_or_else(donglora_client::default_socket_path);
+    let socket_path = args.socket.unwrap_or_else(donglora_client::default_socket_path);
 
     // Parse TCP address
     let tcp_addr = parse_tcp_addr(&args.tcp);

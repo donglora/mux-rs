@@ -30,11 +30,7 @@ impl ClientSession {
     pub fn new() -> (Self, mpsc::Receiver<Vec<u8>>) {
         let id = NEXT_CLIENT_ID.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel(SEND_QUEUE_CAP);
-        let session = Self {
-            id,
-            rx_interested: false,
-            tx,
-        };
+        let session = Self { id, rx_interested: false, tx };
         (session, rx)
     }
 

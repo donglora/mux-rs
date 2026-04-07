@@ -9,13 +9,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use donglora_client::{
-    encode_frame, FrameReader, CMD_TAG_SET_CONFIG, CMD_TAG_START_RX, CMD_TAG_STOP_RX,
-    RADIO_CONFIG_SIZE, RESP_TAG_OK, RESP_TAG_RX_PACKET,
+use donglora_client::protocol::{
+    CMD_TAG_SET_CONFIG, CMD_TAG_START_RX, CMD_TAG_STOP_RX, RADIO_CONFIG_SIZE, RESP_TAG_OK, RESP_TAG_RX_PACKET,
 };
+use donglora_client::{FrameReader, encode_frame};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UnixListener};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 /// A queued command: (client_id, raw_cmd_bytes).
 type QueuedCmd = (u64, Vec<u8>);
@@ -63,28 +63,20 @@ impl MuxDaemon {
         tcp_addr: Option<(String, u16)>,
         shutdown: CancellationToken,
     ) -> Self {
-        Self {
-            serial_port,
-            socket_path,
-            tcp_addr,
-            shutdown,
-        }
+        Self { serial_port, socket_path, tcp_addr, shutdown }
     }
 
     /// Run the mux daemon. Returns when shutdown is signalled.
     pub async fn run(&self) -> anyhow::Result<()> {
-        let state: SharedState = Arc::new(Mutex::new(MuxInner {
-            sessions: HashMap::new(),
-            mux_state: MuxState::new(),
-        }));
+        let state: SharedState =
+            Arc::new(Mutex::new(MuxInner { sessions: HashMap::new(), mux_state: MuxState::new() }));
 
         // Command channel: client handlers → dongle writer
         let (cmd_tx, cmd_rx) = mpsc::channel::<(u64, Vec<u8>)>(64);
         let cmd_rx = Arc::new(Mutex::new(cmd_rx));
 
         // Pending response slot: dongle writer installs, dongle reader resolves
-        let pending_response: Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>> =
-            Arc::new(Mutex::new(None));
+        let pending_response: Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>> = Arc::new(Mutex::new(None));
 
         // Prepare socket directory
         let sock_path = Path::new(&self.socket_path);
@@ -134,24 +126,13 @@ impl MuxDaemon {
         };
 
         // Spawn client accept tasks
-        tokio::spawn(accept_unix_clients(
-            unix_listener,
-            state.clone(),
-            cmd_tx.clone(),
-            self.shutdown.clone(),
-        ));
+        tokio::spawn(accept_unix_clients(unix_listener, state.clone(), cmd_tx.clone(), self.shutdown.clone()));
         if let Some(listener) = tcp_listener {
-            tokio::spawn(accept_tcp_clients(
-                listener,
-                state.clone(),
-                cmd_tx.clone(),
-                self.shutdown.clone(),
-            ));
+            tokio::spawn(accept_tcp_clients(listener, state.clone(), cmd_tx.clone(), self.shutdown.clone()));
         }
 
         // Connect/reconnect loop
-        self.reconnect_loop(state, cmd_tx, cmd_rx, pending_response)
-            .await;
+        self.reconnect_loop(state, cmd_tx, cmd_rx, pending_response).await;
 
         // Cleanup
         info!("shutting down...");
@@ -245,8 +226,8 @@ impl MuxDaemon {
 
 async fn open_and_ping(port: &str) -> anyhow::Result<tokio_serial::SerialStream> {
     let builder = tokio_serial::new(port, 115_200).timeout(Duration::from_secs(2));
-    let mut serial = tokio_serial::SerialStream::open(&builder)
-        .map_err(|e| anyhow::anyhow!("failed to open {port}: {e}"))?;
+    let mut serial =
+        tokio_serial::SerialStream::open(&builder).map_err(|e| anyhow::anyhow!("failed to open {port}: {e}"))?;
 
     let ping_frame = encode_frame(&[0]);
     AsyncWriteExt::write_all(&mut serial, &ping_frame)
@@ -360,9 +341,7 @@ async fn dispatch_frame(
     }
 }
 
-async fn resolve_pending_with_error(
-    pending_response: &Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>,
-) {
+async fn resolve_pending_with_error(pending_response: &Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>) {
     let mut slot = pending_response.lock().await;
     if let Some(sender) = slot.take() {
         let _ = sender.send(vec![5, 1]); // Error(RadioBusy)
@@ -397,12 +376,7 @@ async fn dongle_writer(
         let intercepted = {
             let mut inner = state.lock().await;
             let locked = inner.mux_state.locked_config;
-            intercept::maybe_intercept(
-                &raw_cmd,
-                client_id,
-                &mut inner.sessions,
-                &locked,
-            )
+            intercept::maybe_intercept(&raw_cmd, client_id, &mut inner.sessions, &locked)
         };
         if let Some(synthetic) = intercepted {
             let inner = state.lock().await;
@@ -607,27 +581,16 @@ async fn client_writer<W: AsyncWriteExt + Unpin>(
             () = shutdown.cancelled() => return,
         };
 
-        if AsyncWriteExt::write_all(&mut write_half, &frame)
-            .await
-            .is_err()
-        {
+        if AsyncWriteExt::write_all(&mut write_half, &frame).await.is_err() {
             return;
         }
     }
 }
 
-async fn remove_client(
-    client_id: u64,
-    state: &SharedState,
-    label: &str,
-    cmd_tx: &mpsc::Sender<(u64, Vec<u8>)>,
-) {
+async fn remove_client(client_id: u64, state: &SharedState, label: &str, cmd_tx: &mpsc::Sender<(u64, Vec<u8>)>) {
     let mut inner = state.lock().await;
 
-    let was_interested = inner
-        .sessions
-        .get(&client_id)
-        .is_some_and(|s| s.rx_interested);
+    let was_interested = inner.sessions.get(&client_id).is_some_and(|s| s.rx_interested);
 
     inner.sessions.remove(&client_id);
     info!("{label} disconnected ({} remain)", inner.sessions.len());
@@ -637,9 +600,7 @@ async fn remove_client(
         info!("last RX-interested client gone — sending StopRx");
         // Drop the lock before sending to avoid deadlock
         drop(inner);
-        let _ = cmd_tx
-            .send((SYNTHETIC_CLIENT_ID, vec![CMD_TAG_STOP_RX]))
-            .await;
+        let _ = cmd_tx.send((SYNTHETIC_CLIENT_ID, vec![CMD_TAG_STOP_RX])).await;
         return;
     }
 

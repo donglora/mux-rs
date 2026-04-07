@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 — 2026-04-07
+
+### Changed
+
+- Upgraded to `donglora-client` 0.2 (published crate, no more monorepo path dep).
+- Wire-level protocol constants now imported from `donglora_client::protocol::*`.
+
+### Fixed
+
+- Repository URL now points to `github.com/donglora/mux-rs`.
+- README links updated (removed stale monorepo paths).
+- Added `rust-version`, `homepage`, and `exclude` to Cargo.toml.
+
 ## 0.1.1 — 2026-04-06
 
 ### Fixed

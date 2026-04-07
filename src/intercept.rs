@@ -6,9 +6,9 @@
 
 use std::collections::HashMap;
 
-use donglora_client::{
-    CMD_TAG_SET_CONFIG, CMD_TAG_START_RX, CMD_TAG_STOP_RX, ERROR_INVALID_CONFIG, RADIO_CONFIG_SIZE,
-    RESP_TAG_ERROR, RESP_TAG_OK,
+use donglora_client::protocol::{
+    CMD_TAG_SET_CONFIG, CMD_TAG_START_RX, CMD_TAG_STOP_RX, ERROR_INVALID_CONFIG, RADIO_CONFIG_SIZE, RESP_TAG_ERROR,
+    RESP_TAG_OK,
 };
 use tracing::{debug, warn};
 
@@ -22,9 +22,7 @@ pub struct MuxState {
 
 impl MuxState {
     pub fn new() -> Self {
-        Self {
-            locked_config: None,
-        }
+        Self { locked_config: None }
     }
 }
 
@@ -67,27 +65,18 @@ fn intercept_set_config(
 
     // Same config — reply Ok without hitting the dongle
     if config_bytes == locked.as_slice() {
-        let label = sessions
-            .get(&client_id)
-            .map(ClientSession::label)
-            .unwrap_or_else(|| format!("id-{client_id}"));
+        let label = sessions.get(&client_id).map(ClientSession::label).unwrap_or_else(|| format!("id-{client_id}"));
         debug!("{label}: SetConfig matches locked config — Ok");
         return Some(vec![RESP_TAG_OK]);
     }
 
     // Different config — reject
-    let label = sessions
-        .get(&client_id)
-        .map(ClientSession::label)
-        .unwrap_or_else(|| format!("id-{client_id}"));
+    let label = sessions.get(&client_id).map(ClientSession::label).unwrap_or_else(|| format!("id-{client_id}"));
     warn!("{label}: SetConfig rejected (conflicts with locked config)");
     Some(vec![RESP_TAG_ERROR, ERROR_INVALID_CONFIG])
 }
 
-fn intercept_start_rx(
-    client_id: u64,
-    sessions: &mut HashMap<u64, ClientSession>,
-) -> Option<Vec<u8>> {
+fn intercept_start_rx(client_id: u64, sessions: &mut HashMap<u64, ClientSession>) -> Option<Vec<u8>> {
     let client = sessions.get(&client_id)?;
 
     // Already interested — no-op
@@ -107,10 +96,7 @@ fn intercept_start_rx(
     None
 }
 
-fn intercept_stop_rx(
-    client_id: u64,
-    sessions: &mut HashMap<u64, ClientSession>,
-) -> Option<Vec<u8>> {
+fn intercept_stop_rx(client_id: u64, sessions: &mut HashMap<u64, ClientSession>) -> Option<Vec<u8>> {
     let client = sessions.get(&client_id)?;
 
     // Wasn't interested — no-op
@@ -140,6 +126,7 @@ pub fn rx_interest_count(sessions: &HashMap<u64, ClientSession>) -> usize {
 // ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -201,10 +188,7 @@ mod tests {
         let id = first_id(&sessions);
         let mut cmd = vec![CMD_TAG_SET_CONFIG];
         cmd.extend_from_slice(&[99, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
-        assert_eq!(
-            maybe_intercept(&cmd, id, &mut sessions, &locked),
-            Some(vec![RESP_TAG_ERROR, ERROR_INVALID_CONFIG])
-        );
+        assert_eq!(maybe_intercept(&cmd, id, &mut sessions, &locked), Some(vec![RESP_TAG_ERROR, ERROR_INVALID_CONFIG]));
     }
 
     // ── StartRx ────────────────────────────────────────────────────
@@ -223,10 +207,7 @@ mod tests {
         let locked = None;
         let id = first_id(&sessions);
         sessions.get_mut(&id).unwrap().rx_interested = true;
-        assert_eq!(
-            maybe_intercept(&[CMD_TAG_START_RX], id, &mut sessions, &locked),
-            Some(vec![RESP_TAG_OK])
-        );
+        assert_eq!(maybe_intercept(&[CMD_TAG_START_RX], id, &mut sessions, &locked), Some(vec![RESP_TAG_OK]));
     }
 
     #[test]
@@ -248,10 +229,7 @@ mod tests {
         let mut sessions = make_sessions(1);
         let locked = None;
         let id = first_id(&sessions);
-        assert_eq!(
-            maybe_intercept(&[CMD_TAG_STOP_RX], id, &mut sessions, &locked),
-            Some(vec![RESP_TAG_OK])
-        );
+        assert_eq!(maybe_intercept(&[CMD_TAG_STOP_RX], id, &mut sessions, &locked), Some(vec![RESP_TAG_OK]));
     }
 
     #[test]
