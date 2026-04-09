@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 — 2026-04-08
+
+### Fixed
+
+- Bumped MSRV from 1.85 to 1.93 to satisfy `ucobs` dependency requirement.
+  `cargo install donglora-mux` now works on toolchains >= 1.93.
+
 ## 0.2.1 — 2026-04-07
 
 ### Fixed
