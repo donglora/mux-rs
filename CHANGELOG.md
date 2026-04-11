@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Keepalive ping: detects unresponsive dongles (e.g. UART boards behind a
+  CP2102 bridge where the serial port stays open across ESP32 resets). Pings
+  every 5 seconds of idle, declares dongle lost after 2-second timeout.
+- Radio state restoration after reconnect: saved SetConfig and StartRx are
+  re-sent to the dongle so clients don't need to know a reset happened.
+
 ## 0.2.2 — 2026-04-08
 
 ### Fixed

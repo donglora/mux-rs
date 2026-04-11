@@ -40,6 +40,12 @@ const MAX_CONSECUTIVE_ERRORS: u32 = 3;
 /// Sentinel client ID for synthetic commands (e.g. auto StopRx).
 const SYNTHETIC_CLIENT_ID: u64 = u64::MAX;
 
+/// Keepalive ping interval: if no commands flow for this long, ping the dongle.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
+
+/// How long to wait for a keepalive Pong before declaring the dongle lost.
+const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// Shared mux state, protected by async mutex.
 type SharedState = Arc<Mutex<MuxInner>>;
 
@@ -146,10 +152,13 @@ impl MuxDaemon {
     async fn reconnect_loop(
         &self,
         state: SharedState,
-        _cmd_tx: mpsc::Sender<(u64, Vec<u8>)>, // kept alive to prevent channel close
+        cmd_tx: mpsc::Sender<(u64, Vec<u8>)>,
         cmd_rx: SharedCmdRx,
         pending_response: Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>,
     ) {
+        let mut saved_config: Option<[u8; RADIO_CONFIG_SIZE]> = None;
+        let mut had_rx_interest = false;
+
         loop {
             if self.shutdown.is_cancelled() {
                 break;
@@ -194,6 +203,17 @@ impl MuxDaemon {
                 self.shutdown.clone(),
             ));
 
+            // Re-establish radio state from previous session
+            if let Some(config) = saved_config.take() {
+                info!("restoring radio config after reconnect");
+                let mut cmd = vec![CMD_TAG_SET_CONFIG];
+                cmd.extend_from_slice(&config);
+                let _ = cmd_tx.send((SYNTHETIC_CLIENT_ID, cmd)).await;
+                if had_rx_interest {
+                    let _ = cmd_tx.send((SYNTHETIC_CLIENT_ID, vec![CMD_TAG_START_RX])).await;
+                }
+            }
+
             // Wait for dongle loss or shutdown
             tokio::select! {
                 () = self.shutdown.cancelled() => {},
@@ -209,6 +229,13 @@ impl MuxDaemon {
             {
                 let mut rx = cmd_rx.lock().await;
                 while rx.try_recv().is_ok() {}
+            }
+
+            // Save radio state for restoration after reconnect
+            {
+                let mut inner = state.lock().await;
+                saved_config = inner.mux_state.locked_config.take();
+                had_rx_interest = intercept::rx_interest_count(&inner.sessions) > 0;
             }
 
             if !self.shutdown.is_cancelled() {
@@ -380,6 +407,32 @@ async fn resolve_pending_with_error(pending_response: &Arc<Mutex<Option<oneshot:
     }
 }
 
+/// Send a Ping and wait for Pong. Returns `true` if the dongle responded.
+async fn keepalive_ping(
+    serial: &mut tokio::io::WriteHalf<tokio_serial::SerialStream>,
+    pending_response: &Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>,
+) -> bool {
+    let (resp_tx, resp_rx) = oneshot::channel();
+    {
+        let mut slot = pending_response.lock().await;
+        *slot = Some(resp_tx);
+    }
+
+    let ping_frame = encode_frame(&[0]);
+    if AsyncWriteExt::write_all(serial, &ping_frame).await.is_err() {
+        return false;
+    }
+
+    match tokio::time::timeout(KEEPALIVE_TIMEOUT, resp_rx).await {
+        Ok(Ok(_)) => true,
+        _ => {
+            let mut slot = pending_response.lock().await;
+            *slot = None;
+            false
+        }
+    }
+}
+
 async fn dongle_writer(
     mut serial: tokio::io::WriteHalf<tokio_serial::SerialStream>,
     cmd_rx: SharedCmdRx,
@@ -388,19 +441,33 @@ async fn dongle_writer(
     dongle_lost: CancellationToken,
     shutdown: CancellationToken,
 ) {
+    let keepalive = tokio::time::sleep(KEEPALIVE_INTERVAL);
+    tokio::pin!(keepalive);
+
     loop {
-        // Pull next command from queue
-        let (client_id, raw_cmd) = {
+        // Pull next command, or fire keepalive if idle too long
+        let cmd = {
             let mut rx = cmd_rx.lock().await;
             tokio::select! {
-                cmd = rx.recv() => {
-                    match cmd {
-                        Some(c) => c,
-                        None => return,
-                    }
-                }
+                cmd = rx.recv() => cmd,
+                () = &mut keepalive => None,
                 () = shutdown.cancelled() => return,
                 () = dongle_lost.cancelled() => return,
+            }
+        };
+
+        keepalive.as_mut().reset(tokio::time::Instant::now() + KEEPALIVE_INTERVAL);
+
+        let (client_id, raw_cmd) = match cmd {
+            Some(c) => c,
+            None => {
+                debug!("keepalive ping");
+                if !keepalive_ping(&mut serial, &pending_response).await {
+                    error!("keepalive ping failed - dongle lost");
+                    dongle_lost.cancel();
+                    return;
+                }
+                continue;
             }
         };
 
