@@ -162,8 +162,6 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "donglora-client"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "343d750fe1e5dad94d4b31e6dbbb05214b39e66f3c94a2ff2a29b0031ffd2826"
 dependencies = [
  "anyhow",
  "serialport",

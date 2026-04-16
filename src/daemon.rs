@@ -624,7 +624,7 @@ fn spawn_client<R, W>(
         }
 
         let writer_shutdown = shutdown.clone();
-        let writer_handle = tokio::spawn(client_writer(write_half, send_rx, writer_shutdown));
+        let writer_handle = tokio::spawn(client_writer(write_half, send_rx, client_id, writer_shutdown));
 
         client_reader(read_half, client_id, cmd_tx_clone.clone(), shutdown).await;
 
@@ -647,19 +647,29 @@ async fn client_reader<R: AsyncReadExt + Unpin>(
     loop {
         let read_result = tokio::select! {
             result = read_half.read(&mut buf) => result,
-            () = shutdown.cancelled() => return,
+            () = shutdown.cancelled() => {
+                debug!("client-{client_id} reader exit: mux shutdown");
+                return;
+            }
         };
 
         match read_result {
-            Ok(0) => return,
+            Ok(0) => {
+                debug!("client-{client_id} reader exit: EOF (peer closed)");
+                return;
+            }
             Ok(n) => {
                 for frame in reader.feed(&buf[..n]) {
                     if cmd_tx.send((client_id, frame)).await.is_err() {
+                        debug!("client-{client_id} reader exit: command queue closed");
                         return;
                     }
                 }
             }
-            Err(_) => return,
+            Err(e) => {
+                debug!("client-{client_id} reader exit: read error: {e} (kind={:?})", e.kind());
+                return;
+            }
         }
     }
 }
@@ -667,6 +677,7 @@ async fn client_reader<R: AsyncReadExt + Unpin>(
 async fn client_writer<W: AsyncWriteExt + Unpin>(
     mut write_half: W,
     mut send_rx: mpsc::Receiver<Vec<u8>>,
+    client_id: u64,
     shutdown: CancellationToken,
 ) {
     loop {
@@ -674,13 +685,20 @@ async fn client_writer<W: AsyncWriteExt + Unpin>(
             f = send_rx.recv() => {
                 match f {
                     Some(f) => f,
-                    None => return,
+                    None => {
+                        debug!("client-{client_id} writer exit: send queue closed (session removed)");
+                        return;
+                    }
                 }
             }
-            () = shutdown.cancelled() => return,
+            () = shutdown.cancelled() => {
+                debug!("client-{client_id} writer exit: mux shutdown");
+                return;
+            }
         };
 
-        if AsyncWriteExt::write_all(&mut write_half, &frame).await.is_err() {
+        if let Err(e) = AsyncWriteExt::write_all(&mut write_half, &frame).await {
+            debug!("client-{client_id} writer exit: write error: {e} (kind={:?})", e.kind());
             return;
         }
     }
@@ -689,10 +707,17 @@ async fn client_writer<W: AsyncWriteExt + Unpin>(
 async fn remove_client(client_id: u64, state: &SharedState, label: &str, cmd_tx: &mpsc::Sender<(u64, Vec<u8>)>) {
     let mut inner = state.lock().await;
 
-    let was_interested = inner.sessions.get(&client_id).is_some_and(|s| s.rx_interested);
+    let (was_interested, drops) = inner
+        .sessions
+        .get(&client_id)
+        .map_or((false, 0), |s| (s.rx_interested, s.drop_count()));
 
     inner.sessions.remove(&client_id);
-    info!("{label} disconnected ({} remain)", inner.sessions.len());
+    if drops > 0 {
+        info!("{label} disconnected ({} remain, {drops} dropped frames)", inner.sessions.len());
+    } else {
+        info!("{label} disconnected ({} remain)", inner.sessions.len());
+    }
 
     // If last RX-interested client gone, send synthetic StopRx
     if was_interested && intercept::rx_interest_count(&inner.sessions) == 0 {
