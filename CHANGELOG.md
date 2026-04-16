@@ -1,14 +1,45 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-alpha.1 — 2026-04-21
+
+### Breaking
+
+- **Upgraded to DongLoRa Protocol v2 wire format.** Wire-incompatible with 0.x
+  clients and firmware. Now depends directly on `donglora-protocol` for
+  frame encode/decode.
+- **Tag-aware dispatch.** Each inbound client frame is re-tagged with a
+  mux-allocated device tag; responses are routed back to the original
+  client using the tag mapping. No more single-oneshot response slot —
+  multiple clients can have commands in flight concurrently.
 
 ### Added
 
-- Keepalive ping: detects unresponsive dongles (e.g. UART boards behind a
-  CP2102 bridge where the serial port stays open across ESP32 resets). Pings
-  every 5 seconds of idle, declares dongle lost after 2-second timeout.
-- Radio state restoration after reconnect: saved SetConfig and StartRx are
-  re-sent to the dongle so clients don't need to know a reset happened.
+- **Full `§13.2` multi-client `SET_CONFIG` semantics.** Tracks the
+  `(client, modulation)` lock owner. Cross-client calls synthesize:
+  - `OK(APPLIED / MINE, params)` when the calling client owns the lock
+    (forwarded to dongle).
+  - `OK(ALREADY_MATCHED / OTHER, current)` when another client holds
+    the lock and the requested params byte-match.
+  - `OK(LOCKED_MISMATCH / OTHER, current)` when another client holds
+    the lock and the requested params differ.
+  - Lock is released automatically when the owning client disconnects.
+- **TX loopback fan-out (spec §13.4).** On `TX_DONE(TRANSMITTED)`, the
+  mux synthesizes an `RX` frame with `origin = LocalLoopback` and sends
+  it to every connected client except the transmitter.
+- **Async `ERR(EFRAME)` fan-out.** If the dongle emits async framing
+  errors (tag = 0), they're broadcast to all clients rather than
+  swallowed.
+- **Per-client TX cache** on `ClientSession` so the loopback fan-out
+  doesn't need the sender to re-buffer.
+- **`TagMapper`** with skip-zero allocation and per-client bulk drop on
+  disconnect.
+
+### Removed
+
+- The single `pending_response: oneshot::Sender` slot in the daemon
+  (fundamentally incompatible with v1.0's per-tag concurrency).
+- The separate 5-second keepalive timer — replaced with a 500 ms
+  internal cadence matching the spec §3.4 inactivity window.
 
 ## 0.2.2 — 2026-04-08
 

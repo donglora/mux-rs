@@ -50,14 +50,13 @@ async fn main() -> anyhow::Result<()> {
     // Resolve serial port
     let port = match args.port {
         Some(p) => p,
-        None => tokio::task::spawn_blocking(|| {
-            donglora_client::find_port().unwrap_or_else(|| {
+        None => match donglora_client::find_port() {
+            Some(p) => p,
+            None => {
                 info!("waiting for DongLoRa device...");
-                donglora_client::wait_for_device()
-            })
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("device discovery task failed: {e}"))?,
+                donglora_client::wait_for_device().await
+            }
+        },
     };
 
     // Resolve socket path
