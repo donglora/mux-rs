@@ -1,6 +1,6 @@
 [package]
 name = "donglora-mux"
-version = "1.0.0-alpha.1"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.93"
 authors = ["Stephen Waits <steve@waits.net>"]
@@ -15,9 +15,9 @@ exclude = [".jj/", "deny.toml", "justfile", "mise.toml", "rustfmt.toml"]
 [dependencies]
 # Mux speaks raw DongLoRa Protocol frames — pull the wire codec directly from the
 # protocol crate rather than routing through the high-level Dongle API.
-donglora-protocol = { path = "../protocol", default-features = false, features = ["std"] }
+donglora-protocol = { version = "1.0.0", default-features = false, features = ["std"] }
 # Still used for USB discovery helpers (`find_port`, `wait_for_device`).
-donglora-client = { path = "../client-rs", version = "1.0.0-alpha.1" }
+donglora-client = "1.0.0"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
