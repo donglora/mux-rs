@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1 — 2026-04-22
+
+### Dependencies
+
+- Bumped `donglora-client` to `1.0.1` — adds the WCH CH340K USB-UART
+  bridge (`1a86:7522`) to the port-discovery list. The Elecrow
+  ThinkNode-M2 board is now detected automatically; previously mux
+  refused to attach to it because the bridge VID:PID wasn't
+  recognized.
+
 ## 1.0.0 — 2026-04-22
 
 ### Breaking
