@@ -167,9 +167,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "donglora-client"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2d2eb852b012cd692ab270397cdc81ac52c95a7b6543e8d8f6ee1e98537c461"
+version = "1.0.2"
 dependencies = [
  "donglora-protocol",
  "rand",
@@ -182,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "donglora-mux"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
