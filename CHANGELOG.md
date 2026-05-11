@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.2 — 2026-05-11
+
+### Changed
+
+- Refreshed `Cargo.lock` to pull in the latest compatible patch/minor
+  releases of dependencies:
+  - `donglora-client` 1.0.2 → 1.1.1
+  - `donglora-protocol` 1.0.0 → 1.2.0
+  - `tokio` 1.51.0 → 1.52.3
+  - `clap` 4.6.0 → 4.6.1
+  - `heapless` 0.9.2 → 0.9.3
+  - `libc` 0.2.184 → 0.2.186
+  - `bitflags` 2.11.0 → 2.11.1
+  No source changes; CLI and behavior are unchanged.
+
 ## 1.0.1 — 2026-04-22
 
 ### Dependencies
